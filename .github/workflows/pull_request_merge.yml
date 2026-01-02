@@ -108,18 +108,87 @@ jobs:
           count=${#images_array[@]}
           echo "Found images: $count"
           if [ $count -gt 0 ]; then
-            brew update
-            brew install imageoptim
-            npm install -g imageoptim-cli
-            batch_size=30
-            batch_number=1
-            total_batches=$(( (count + batch_size - 1) / batch_size ))
-            for ((i = 0; i < count; i += batch_size)); do
-                batch=("${images_array[@]:i:batch_size}")
-                echo "Processing batch: $batch_number / $total_batches"
-                imageoptim "${batch[@]}"
-                ((batch_number++))
+            brew install oxipng jpegoptim
+            
+            # Track total savings
+            total_before=0
+            total_after=0
+            
+            # Process all images
+            for image in "${images_array[@]}"; do
+              if [[ "$image" == *.png ]]; then
+                # Get size before
+                size_before=$(stat -f%z "$image" 2>/dev/null || stat -c%s "$image")
+                total_before=$((total_before + size_before))
+                
+                # Optimize
+                oxipng -o 6 --strip safe "$image"
+                
+                # Get size after
+                size_after=$(stat -f%z "$image" 2>/dev/null || stat -c%s "$image")
+                total_after=$((total_after + size_after))
+                
+                # Calculate savings
+                saved=$((size_before - size_after))
+                if [ $size_before -gt 0 ]; then
+                  percent=$(echo "scale=2; ($saved * 100) / $size_before" | bc)
+                else
+                  percent=0
+                fi
+                
+                # Format sizes
+                before_fmt=$(numfmt --to=iec-i --suffix=B $size_before 2>/dev/null || echo "${size_before}B")
+                after_fmt=$(numfmt --to=iec-i --suffix=B $size_after 2>/dev/null || echo "${size_after}B")
+                saved_fmt=$(numfmt --to=iec-i --suffix=B $saved 2>/dev/null || echo "${saved}B")
+                
+                echo "✓ $image was: $before_fmt now: $after_fmt saving: $saved_fmt ($percent%)"
+              fi
+              
+              if [[ "$image" == *.jpg ]] || [[ "$image" == *.jpeg ]]; then
+                # Get size before
+                size_before=$(stat -f%z "$image" 2>/dev/null || stat -c%s "$image")
+                total_before=$((total_before + size_before))
+                
+                # Optimize
+                jpegoptim --max=85 --strip-all "$image"
+                
+                # Get size after
+                size_after=$(stat -f%z "$image" 2>/dev/null || stat -c%s "$image")
+                total_after=$((total_after + size_after))
+                
+                # Calculate savings
+                saved=$((size_before - size_after))
+                if [ $size_before -gt 0 ]; then
+                  percent=$(echo "scale=2; ($saved * 100) / $size_before" | bc)
+                else
+                  percent=0
+                fi
+                
+                # Format sizes
+                before_fmt=$(numfmt --to=iec-i --suffix=B $size_before 2>/dev/null || echo "${size_before}B")
+                after_fmt=$(numfmt --to=iec-i --suffix=B $size_after 2>/dev/null || echo "${size_after}B")
+                saved_fmt=$(numfmt --to=iec-i --suffix=B $saved 2>/dev/null || echo "${saved}B")
+                
+                echo "✓ $image was: $before_fmt now: $after_fmt saving: $saved_fmt ($percent%)"
+              fi
             done
+            
+            # Print total
+            if [ $count -gt 1 ]; then
+              total_saved=$((total_before - total_after))
+              if [ $total_before -gt 0 ]; then
+                total_percent=$(echo "scale=2; ($total_saved * 100) / $total_before" | bc)
+              else
+                total_percent=0
+              fi
+              
+              before_fmt=$(numfmt --to=iec-i --suffix=B $total_before 2>/dev/null || echo "${total_before}B")
+              after_fmt=$(numfmt --to=iec-i --suffix=B $total_after 2>/dev/null || echo "${total_after}B")
+              saved_fmt=$(numfmt --to=iec-i --suffix=B $total_saved 2>/dev/null || echo "${total_saved}B")
+              
+              echo "✓ TOTAL was: $before_fmt now: $after_fmt saving: $saved_fmt ($total_percent%)"
+            fi
+            
             images_optimized=true
           fi
           echo "images_optimized=$images_optimized" >> $GITHUB_OUTPUT
